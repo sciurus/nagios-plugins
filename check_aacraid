@@ -1,0 +1,26 @@
+#!/bin/sh
+
+ARCCONF=/usr/local/sbin/arcconf
+OUTPUT=$(mktemp /tmp/arcconf.XXXXXXXXXX)
+$ARCCONF getconfig 1 > $OUTPUT
+PHYSICAL=$(grep "Defunct disk drive count" $OUTPUT | cut -d \: -f 2)
+LOGICAL=$(grep "Status of logical device" $OUTPUT | cut -d \: -f 2)
+CONTROLLER=$(grep "Controller Status" $OUTPUT | cut -d \: -f 2)
+rm $OUTPUT
+
+MSG=""
+if [ $PHYSICAL != "0" ]; then
+  MSG=" $MSG $PHYSICAL failed drives"
+elif [ $LOGICAL != "Optimal" ]; then
+  MSG=" $MSG $LOGICAL status of logical device"
+elif [ $CONTROLLER != "Optimal" ]; then
+  MSG=" $MSG $CONTROLLER status of controller"
+fi
+
+if [ -z $MSG ]; then
+  echo "aacraid OK - Lucky you"
+  exit 0
+else
+  echo "aacraid CRITICAL -$MSG"
+  exit 2
+fi

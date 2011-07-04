@@ -1,0 +1,106 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+my $timeout = 1;
+my $mp      = $ARGV[0];
+my $mtab    = "/proc/mounts";
+
+# First, we check if the OS thinks the filesystem is mounted
+
+my $found;
+open my $fh, '<', $mtab || die "Could not open $mtab\n";
+while (<fh>) {
+    if (/\Q$mp\E/) {
+        $found = 1;
+        last;
+    }
+}
+close $fh;
+
+# If it was not recorded as mounted we exit and report the error now
+
+if ( !defined($found) ) {
+    print "NFS_MOUNT CRITICAL - Not Mounted";
+    exit 2;
+}
+
+# If it was mounted we start a child process
+
+my $pid = fork();
+
+if ( !defined($pid) ) {
+
+    die "Could not fork\n";
+
+}
+elsif ( $pid == 0 ) {
+
+    # The child tries to access the mountpoint
+
+    chdir($mp) || exit 1;
+
+}
+else {
+
+    # The parent waits a configurable amount of time for this to succeed
+
+    sleep($timeout);
+
+    # Then finds its child in order to get more information
+
+    use Proc::ProcessTable;
+    my $pt = Proc::ProcessTable->new();
+    my $child;
+    foreach my $p ( @{ $pt->table() } ) {
+        if ( $p->pid == $pid ) {
+            $child = $p;
+            last;
+        }
+    }
+
+    # The parent finds out the childs state and makes sure it is stopped
+
+    my $status;
+
+    # If the child is sleeping the nfs mount is down or slow
+    if ( $child->state eq "sleep" ) {
+        $status = 2;
+        print "NFS_MOUNT CRITICAL - No Response in $timeout Seconds\n";
+        $child->kill(9);
+
+        # Defunct means the child finished running
+    }
+    elsif ( $child->state eq "defunct" ) {
+        $status = 0;
+
+        # There are other possiblities, but they don't make sense
+    }
+    else {
+        $status = 3;
+        print "NFS_MOUNT UNKNOWN - Unexpected Error\n";
+        $child->kill(9);
+    }
+
+    waitpid( $pid, 0 );
+
+    # The child finished before the timeout, but there could have been an error
+
+    if ( $status == 0 ) {
+        if ( $? != 0 ) {
+            $status = 3;
+            print "NFS_MOUNT UNKNOWN - Unexpected Error\n";
+        }
+        else {
+            print "NFS_MOUNT OK - Responded before $timeout seconds\n";
+        }
+    }
+
+    # Now we exit and report 0 if the mount is okay;
+    # 2 if it is unmounted, down, or slow;
+    # and 3 if there was an unexpected error
+
+    exit $status;
+
+}

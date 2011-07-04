@@ -1,0 +1,99 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use Nagios::Plugin;
+
+my $p = Nagios::Plugin->new(
+    shortname => "SWAPPING",
+    usage     => "Usage: %s  [ --delay=<delay between samples> ]
+    [ --in_warning=<page in warning threshold> ] [ --in_critical=<page in critical threshold> ]  
+    [ --out_warning=<page out warning threshold> ] [ --out_critical=<page out critical threshold> ]  ",
+);
+
+$p->add_arg(
+    spec     => 'delay=i',
+    help     => "Delay in seconds between first and second sample",
+    required => 0,
+    default  => 1,
+);
+
+$p->add_arg(
+    spec     => 'in_warning=i',
+    help     => "Page in warning threshhold",
+    required => 1,
+);
+
+$p->add_arg(
+    spec     => 'in_critical=i',
+    help     => "Page in critical threshhold",
+    required => 1,
+);
+
+$p->add_arg(
+    spec     => 'out_warning=i',
+    help     => "Page out warning threshhold",
+    required => 1,
+);
+
+$p->add_arg(
+    spec     => 'out_critical=i',
+    help     => "Page out critical threshhold",
+    required => 1,
+);
+
+$p->getopts();
+
+my ( $in_one, $out_one ) = get_paging();
+sleep( $p->opts->delay );
+my ( $in_two, $out_two ) = get_paging();
+
+my $paged_in  = $in_two - $in_one;
+my $paged_out = $out_two - $out_one;
+
+my $in_result = $p->check_threshold(
+    check    => $paged_in,
+    warning  => $p->opts->in_warning,
+    critical => $p->opts->in_critical
+);
+my $out_result = $p->check_threshold(
+    check    => $paged_out,
+    warning  => $p->opts->out_warning,
+    critical => $p->opts->out_critical
+);
+
+my $status;
+if ( $in_result == CRITICAL or $out_result == CRITICAL ) {
+    $status = CRITICAL;
+}
+elsif ( $in_result == WARNING or $out_result == WARNING ) {
+    $status = WARNING;
+}
+else {
+    $status = OK;
+}
+
+my $message = "$paged_in pages in $paged_out pages out";
+
+$p->nagios_exit( $status, $message );
+
+sub get_paging {
+    my ( $in, $out );
+    my $find_in  = qr/^pswpin (\d+)$/;
+    my $find_out = qr/^pswpout (\d+)$/;
+
+    open my $fh, '<', '/proc/vmstat' || die "Could not open /proc/vmstat\n";
+    while ( my $line = <$fh> ) {
+        chomp $line;
+        if ( $line =~ $find_in ) {
+            $in = $1;
+        }
+        elsif ( $line =~ $find_out ) {
+            $out = $1;
+        }
+    }
+    close $fh;
+
+    return ( $in, $out );
+}

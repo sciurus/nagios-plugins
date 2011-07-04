@@ -1,0 +1,106 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Proc::ProcessTable;
+use Getopt::Long;
+use Pod::Usage;
+use Readonly;
+
+Readonly::Scalar my $BYTES_TO_MEGABYTES => 1_048_576;
+
+my $program_name   = q{};
+my $warning_level  = 0;
+my $critical_level = 0;
+my $help           = q{};
+
+GetOptions(
+    'n|name=s'     => \$program_name,
+    'w|warning=i'  => \$warning_level,
+    'c|critical=i' => \$critical_level,
+    'h|help'       => \$help
+  )
+  or pod2usage(
+    -verbose => 0,
+    -exitval => 2
+  );
+
+if ( $program_name eq q{} or $warning_level == 0 or $critical_level == 0 ) {
+    pod2usage(
+        -verbose => 0,
+        -exitval => 2
+    );
+}
+
+pod2usage(
+    -verbose => 1,
+    -exitval => 0
+) if $help;
+
+my $worst = 0;
+my $msg   = q{};
+my $state = q{};
+
+# in ProcessTable
+# 'size' is virtual memory size and 'rss' is resident set size.
+# the units for both are bytes
+
+my $pt = Proc::ProcessTable->new();
+foreach my $p ( @{ $pt->table() } ) {
+    if ( $p->fname eq $program_name ) {
+        my $resident = $p->rss / $BYTES_TO_MEGABYTES;
+        my $pid      = $p->pid;
+        if ( $resident >= $warning_level and $resident < $critical_level ) {
+            $worst = 1 if not $worst == 2;
+            $msg = "$msg Process $pid: RSS is $resident MB.";
+        }
+        if ( $resident >= $critical_level ) {
+            $worst = 2;
+            $msg   = "$msg Process $pid: RSS is $resident MB.";
+        }
+    }
+}
+
+$state = 'OK'       if $worst == 0;
+$state = 'WARNING'  if $worst == 1;
+$state = 'CRITICAL' if $worst == 2;
+
+print "processmemory $state -$msg\n";
+
+exit $worst;
+
+__END__
+
+=head1 NAME
+
+check_processmemory - Nagios plugin for checking the amount of resident memory used by processes. For each process that has the specified program name, the memory usage is checked. If it exceeds the warning or critical level, an alert will be generated that includes its process id.
+
+=head1 SYNOPSIS
+
+check_processmemory -n program_name -w warning_level -c critical_level
+
+=head1 OPTIONS
+
+=over 4
+
+=item -n|--name
+
+Name of the program thats memory usage will be checked.
+
+=item -w|--warning
+
+Memory usage in megabytes that, if excedded, will produce a warning alert from Nagios.
+
+=item -c|--critical
+
+Memory usage in megabytes that, if excedded, will produce a critical alert from Nagios.
+
+=item -h|--help
+
+Print this help message.
+
+=back
+
+=head1 AUTHOR
+
+Brian Pitts <bdp@uga.edu>

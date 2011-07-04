@@ -1,0 +1,55 @@
+#!/bin/sh
+# inspiration from
+# http://ward.vandewege.net/blog/2009/11/nagios-mdadm-and-snmp/
+
+worst=0
+msg=""
+state=""
+
+if [ -f "/etc/mdadm.conf" ]; then
+  devices=$(awk '/ARRAY/ {print $2}' /etc/mdadm.conf)
+else
+  msg=" no software raid devices found"
+fi
+
+for d in $devices; do \
+  /sbin/mdadm --misc -t --detail $d >/dev/null
+  status=$?
+  case $status in
+  # no failed devices
+  0)
+    msg="${msg} ${d}: ok"
+    ;;
+  # single failed device
+  1)
+    if [ worst != 2 ] ; then
+      worst=1
+    fi
+    msg="${msg} ${d}: degraded"
+    ;;
+  # multiple failed devices
+  2)
+    worst=2
+    msg="${msg} ${d}: unusable"
+    ;;
+  # mdadm had error determining status or returned unexpected error code
+  4 | *)
+    if [ worst != 2 ] ; then
+      worst=1
+    fi
+    msg="${msg} ${d}: unknown,"
+    ;;
+  esac
+done
+
+case $worst in
+0)
+  state="OK";;
+1)
+  state="WARNING";;
+2)
+  state="CRITICAL";;
+esac
+
+echo "md $state -$msg"
+exit $worst
