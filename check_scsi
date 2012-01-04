@@ -1,0 +1,38 @@
+#!/bin/sh
+
+RETURN=0
+STATUS='OK'
+MSG=''
+
+for D in /sys/bus/scsi/devices/*:*:*:*; do
+
+    # works on rhel5
+    if [ -e $D/block:* ]; then
+        BLOCK=$(basename $(readlink -e $D/block:*))
+    # works on debian wheezy
+    elif [ -e $D/block ]; then
+        BLOCK=$(ls $D/block)
+    # skip since no corresponding block device
+    else
+        continue
+    fi
+
+    if [ -f "$D/state" ]; then
+        STATE=$(cat $D/state)
+    else
+        echo "scsi UNKNOWN - plugin error getting state"
+        exit 3
+    fi
+
+    # show state even for working devices in order to verify what is being monitored
+    MSG="$MSG ${BLOCK} $STATE"
+
+    if [ "$STATE" != 'running' ]; then
+        STATUS="CRITICAL"
+        RETURN=2
+    fi
+
+done
+
+echo "scsi $STATUS -$MSG"
+exit $RETURN

@@ -33,6 +33,12 @@ This repository contains a number of nagios plugins I've written from scratch wh
   * Pod::Usage
   * Readonly
 
+## check_scsi
+### Usage
+    check_scsi
+### Requirements
+    Linux
+
 ## check_swapping
 ### Usage
     check_swapping  [ --delay=<delay between samples> ] \
